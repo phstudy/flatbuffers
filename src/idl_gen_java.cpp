@@ -602,7 +602,7 @@ class JavaGenerator : public BaseGenerator {
       // Generate verson check method.
       // Force compile time error if not using the same version runtime.
       code += "  public static void ValidateVersion() {";
-      code += " Constants.";
+      code += " com.google.flatbuffers.Constants.";
       code += "FLATBUFFERS_1_12_0(); ";
       code += "}\n";
 
@@ -1560,8 +1560,7 @@ class JavaGenerator : public BaseGenerator {
     // Pack()
     code += "  public static " + GenOffsetType() +
             " pack(FlatBufferBuilder builder, " + struct_name + " _o) {\n";
-    code += "    if (_o == null) return default(" + GenOffsetType() +
-            ");\n";
+    code += "    if (_o == null) return 0;\n";
     for (auto it = struct_def.fields.vec.begin();
          it != struct_def.fields.vec.end(); ++it) {
       auto &field = **it;
@@ -1572,9 +1571,7 @@ class JavaGenerator : public BaseGenerator {
         case BASE_TYPE_STRUCT: {
           if (!field.value.type.struct_def->fixed) {
             code += "    int _" + field.name + " = _o." + field.name +
-                    " == null ? default(" +
-                    GenOffsetType() +
-                    ") : " + GenTypeGet(field.value.type) +
+                    " == null ? 0 : " + GenTypeGet(field.value.type) +
                     ".pack(builder, _o." + field.name + ");\n";
           } else if (struct_def.fixed && struct_has_create) {
             std::vector<FieldArrayLength> array_lengths;
@@ -1592,7 +1589,7 @@ class JavaGenerator : public BaseGenerator {
           std::string create_string =
               field.shared ? "createSharedString" : "createString";
           code += "    int _" + field.name + " = _o." + field.name +
-                  " == null ? default(StringOffset) : "
+                  " == null ? 0 : "
                   "builder." +
                   create_string + "(_o." + field.name + ");\n";
           break;
@@ -1630,7 +1627,7 @@ class JavaGenerator : public BaseGenerator {
                 break;
               default: gen_for_loop = false; break;
             }
-            code += "    int _" + field.name + " = default(VectorOffset);\n";
+            code += "    int _" + field.name + " = 0;\n";
             code += "    if (_o." + property_name + " != null) {\n";
             if (gen_for_loop) {
               code += "      var " + array_name + " = new " + array_type +
@@ -1652,7 +1649,7 @@ class JavaGenerator : public BaseGenerator {
                           "(_o." + camel_name + "[_j]);"
                   : GenTypeGet(field.value.type) + ".pack(builder, _o." +
                           field.name + ".get(_j));";
-            code += "    int _" + field.name + " = default(VectorOffset);\n";
+            code += "    int _" + field.name + " = 0;\n";
             code += "    if (_o." + field.name + " != null) {\n";
             code += "      start" + camel_name + "Vector(builder, _o." +
                 field.name + ".size());\n";
