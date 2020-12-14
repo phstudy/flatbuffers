@@ -1025,7 +1025,7 @@ class JavaGenerator : public BaseGenerator {
               code += MakeCamel(field.name) + "(builder, ";
               if (IsStruct(field.value.type) &&
                   opts.generate_object_based_api) {
-                code += GenTypePointer(field.value.type) + ".Pack(builder, " +
+                code += GenTypePointer(field.value.type) + ".pack(builder, " +
                         field.name + ")";
               } else {
                 code += field.name;
@@ -1498,10 +1498,10 @@ class JavaGenerator : public BaseGenerator {
         case BASE_TYPE_STRUCT: {
           auto fixed = struct_def.fixed && field.value.type.struct_def->fixed;
           if (fixed) {
-            code += start + "this." + camel_name + ".unPack();\n";
+            code += start + "this." + field.name + ".unPack();\n";
           } else {
-            code += start + "this." + camel_name + " != null ? this." +
-                    camel_name + ".unPack() : null;\n";
+            code += start + "this." + field.name + "() != null ? this." +
+                field.name + "().unPack() : null;\n";
           }
           break;
         }
@@ -1510,8 +1510,8 @@ class JavaGenerator : public BaseGenerator {
           auto length_str = NumToString(field.value.type.fixed_length);
           auto unpack_method = field.value.type.struct_def == nullptr ? ""
                                                                       : field.value.type.struct_def->fixed
-                                                                        ? ".UnPack()"
-                                                                        : "?.UnPack()";
+                                                                        ? ".unPack()"
+                                                                        : "?.unPack()";
           code += start + "new " + type_name.substr(0, type_name.length() - 1) +
                   length_str + "];\n";
           code += "    for (int _j = 0; _j < " + length_str + "; ++_j) { _o." +
@@ -1523,7 +1523,7 @@ class JavaGenerator : public BaseGenerator {
           if (field.value.type.element == BASE_TYPE_UNION) {
             code += start + "new " +
                     GenTypeGet_ObjectAPI(field.value.type, opts) + "();\n";
-            code += "    for (int _j = 0; _j < this." + camel_name +
+            code += "    for (int _j = 0; _j < this." + field.name +
                     "Length; ++_j) {\n";
             GenUnionUnPack_ObjectAPI(*field.value.type.enum_def, code_ptr,
                                      camel_name, true);
@@ -1532,14 +1532,14 @@ class JavaGenerator : public BaseGenerator {
             auto fixed = field.value.type.struct_def == nullptr;
             code += start + "new " +
                     GenTypeGet_ObjectAPI(field.value.type, opts) + "();\n";
-            code += "    for (int _j = 0; _j < this." + camel_name +
-                    ".size(); ++_j) {";
-            code += "_o." + camel_name + ".add(";
+            code += "    for (int _j = 0; _j < this." + field.name +
+                    "Length(); ++_j) {";
+            code += "_o." + field.name + ".add(";
             if (fixed) {
-              code += "this." + camel_name + "(_j)";
+              code += "this." + field.name + "(_j)";
             } else {
-              code += "this." + camel_name + "(_j) != null ? this." +
-                      camel_name + "(_j).unPack() : null";
+              code += "this." + field.name + "(_j) != null ? this." +
+                  field.name + "(_j).unPack() : null";
             }
             code += ");}\n";
           }
@@ -1551,7 +1551,7 @@ class JavaGenerator : public BaseGenerator {
           break;
         }
         default: {
-          code += start + "this." + field.name + ";\n";
+          code += start + "this." + field.name + "();\n";
           break;
         }
       }
@@ -1571,11 +1571,11 @@ class JavaGenerator : public BaseGenerator {
       switch (field.value.type.base_type) {
         case BASE_TYPE_STRUCT: {
           if (!field.value.type.struct_def->fixed) {
-            code += "    var _" + field.name + " = _o." + camel_name +
+            code += "    int _" + field.name + " = _o." + field.name +
                     " == null ? default(" +
                     GenOffsetType() +
                     ") : " + GenTypeGet(field.value.type) +
-                    ".Pack(builder, _o." + field.name + ");\n";
+                    ".pack(builder, _o." + field.name + ");\n";
           } else if (struct_def.fixed && struct_has_create) {
             std::vector<FieldArrayLength> array_lengths;
             FieldArrayLength tmp_array_length = {
@@ -1590,11 +1590,11 @@ class JavaGenerator : public BaseGenerator {
         }
         case BASE_TYPE_STRING: {
           std::string create_string =
-              field.shared ? "CreateSharedString" : "CreateString";
-          code += "    var _" + field.name + " = _o." + camel_name +
+              field.shared ? "createSharedString" : "createString";
+          code += "    int _" + field.name + " = _o." + field.name +
                   " == null ? default(StringOffset) : "
                   "builder." +
-                  create_string + "(_o." + camel_name + ");\n";
+                  create_string + "(_o." + field.name + ");\n";
           break;
         }
         case BASE_TYPE_VECTOR: {
@@ -1615,7 +1615,7 @@ class JavaGenerator : public BaseGenerator {
               }
               case BASE_TYPE_STRUCT:
                 array_type = "Offset<" + GenTypeGet(field.value.type) + ">";
-                to_array = GenTypeGet(field.value.type) + ".Pack(builder, _o." +
+                to_array = GenTypeGet(field.value.type) + ".pack(builder, _o." +
                            property_name + "[_j])";
                 break;
               case BASE_TYPE_UTYPE:
@@ -1626,11 +1626,11 @@ class JavaGenerator : public BaseGenerator {
               case BASE_TYPE_UNION:
                 array_type = "int";
                 to_array = WrapInNameSpace(*field.value.type.enum_def) +
-                           "Union.Pack(builder,  _o." + property_name + "[_j])";
+                           "Union.pack(builder,  _o." + property_name + "[_j])";
                 break;
               default: gen_for_loop = false; break;
             }
-            code += "    var _" + field.name + " = default(VectorOffset);\n";
+            code += "    int _" + field.name + " = default(VectorOffset);\n";
             code += "    if (_o." + property_name + " != null) {\n";
             if (gen_for_loop) {
               code += "      var " + array_name + " = new " + array_type +
@@ -1650,15 +1650,15 @@ class JavaGenerator : public BaseGenerator {
                 field.value.type.struct_def == nullptr
                     ? "builder.Add" + GenMethod(field.value.type.VectorType()) +
                           "(_o." + camel_name + "[_j]);"
-                  : GenTypeGet(field.value.type) + ".Pack(builder, _o." +
-                          camel_name + "[_j]);";
-            code += "    var _" + field.name + " = default(VectorOffset);\n";
-            code += "    if (_o." + camel_name + " != null) {\n";
-            code += "      Start" + camel_name + "Vector(builder, _o." +
-                    camel_name + ".Count);\n";
-            code += "      for (var _j = _o." + camel_name +
-                    ".Count - 1; _j >= 0; --_j) { " + pack_method + " }\n";
-            code += "      _" + field.name + " = builder.EndVector();\n";
+                  : GenTypeGet(field.value.type) + ".pack(builder, _o." +
+                          field.name + ".get(_j));";
+            code += "    int _" + field.name + " = default(VectorOffset);\n";
+            code += "    if (_o." + field.name + " != null) {\n";
+            code += "      start" + camel_name + "Vector(builder, _o." +
+                field.name + ".size());\n";
+            code += "      for (int _j = _o." + field.name +
+                    ".size() - 1; _j >= 0; --_j) { " + pack_method + " }\n";
+            code += "      _" + field.name + " = builder.endVector();\n";
             code += "    }\n";
           }
           break;
@@ -1685,7 +1685,7 @@ class JavaGenerator : public BaseGenerator {
           code +=
               "    var _" + field.name + " = _o." + camel_name +
               " == null ? 0 : " + GenTypeGet_ObjectAPI(field.value.type, opts) +
-              ".Pack(builder, _o." + camel_name + ");\n";
+              ".pack(builder, _o." + camel_name + ");\n";
           break;
         }
         default: break;
@@ -1758,7 +1758,7 @@ class JavaGenerator : public BaseGenerator {
           case BASE_TYPE_STRUCT: {
             if (field.value.type.struct_def->fixed) {
               code += "    Add" + camel_name + "(builder, " +
-                      GenTypeGet(field.value.type) + ".Pack(builder, _o." +
+                      GenTypeGet(field.value.type) + ".pack(builder, _o." +
                       camel_name + "));\n";
             } else {
               code +=
@@ -1921,7 +1921,7 @@ class JavaGenerator : public BaseGenerator {
         break;
       }
       case BASE_TYPE_VECTOR: {
-        type_name = "List<" + type_name + ">";
+        type_name = "ArrayList<" + type_name + ">";
         break;
       }
       default: break;
@@ -1972,7 +1972,7 @@ class JavaGenerator : public BaseGenerator {
             code += "      return _o;\n";
             code += "    }\n";
             code += "    set {\n";
-            code += "      this." + camel_name + " = new List<" + utype_name +
+            code += "      this." + camel_name + " = new ArrayList<" + utype_name +
                     "Union>();\n";
             code += "      for (var _j = 0; _j < value.Length; ++_j) {\n";
             code += "        var _o = new " + utype_name + "Union();\n";
@@ -2080,15 +2080,15 @@ class JavaGenerator : public BaseGenerator {
     }
     if (parser_.root_struct_def_ == &struct_def) {
       code += "  public static " + class_name +
-              " DeserializeFromBinary(byte[] fbBuffer) {\n";
-      code += "    return " + struct_def.name + ".GetRootAs" + struct_def.name +
-              "(new ByteBuffer(fbBuffer)).UnPack();\n";
+              " deserializeFromBinary(byte[] fbBuffer) {\n";
+      code += "    return " + struct_def.name + ".getRootAs" + struct_def.name +
+              "(ByteBuffer.wrap(fbBuffer)).unPack();\n";
       code += "  }\n";
-      code += "  public byte[] SerializeToBinary() {\n";
-      code += "    var fbb = new FlatBufferBuilder(0x10000);\n";
-      code += "    " + struct_def.name + ".Finish" + struct_def.name +
-              "Buffer(fbb, " + struct_def.name + ".Pack(fbb, this));\n";
-      code += "    return fbb.DataBuffer.ToSizedArray();\n";
+      code += "  public byte[] serializeToBinary() {\n";
+      code += "    FlatBufferBuilder fbb = new FlatBufferBuilder(0x10000);\n";
+      code += "    " + struct_def.name + ".finish" + struct_def.name +
+              "Buffer(fbb, " + struct_def.name + ".pack(fbb, this));\n";
+      code += "    return fbb.dataBuffer().array();\n";
       code += "  }\n";
     }
     code += "}\n\n";
