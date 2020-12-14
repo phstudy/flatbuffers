@@ -1061,7 +1061,11 @@ class JavaGenerator : public BaseGenerator {
         auto argname = MakeCamel(field.name, false);
         if (!IsScalar(field.value.type.base_type)) argname += "Offset";
         code += " " + argname + ") { builder.add";
-        code += GenMethod(field.value.type) + "(";
+        if (IsOneByte(field.value.type.base_type)) {
+          code += "Int(";
+        } else {
+          code += GenMethod(field.value.type) + "(";
+        }
         code += NumToString(it - struct_def.fields.vec.begin()) + ", ";
         code += SourceCastBasic(field.value.type);
         code += argname;
@@ -1643,10 +1647,13 @@ class JavaGenerator : public BaseGenerator {
                     "Vector(builder, " + array_name + ");\n";
             code += "    }\n";
           } else {
+            auto vectorType = IsOneByte(field.value.type.VectorType().base_type) ? "Int" : GenMethod(field.value.type.VectorType());
+
             auto pack_method =
                 field.value.type.struct_def == nullptr
-                    ? "builder.Add" + GenMethod(field.value.type.VectorType()) +
-                          "(_o." + camel_name + "[_j]);"
+                    ? "builder.add"
+                          + vectorType +
+                          "(_o." + field.name + ".get(_j));"
                   : GenTypeGet(field.value.type) + ".pack(builder, _o." +
                           field.name + ".get(_j));";
             code += "    int _" + field.name + " = 0;\n";
@@ -1918,6 +1925,10 @@ class JavaGenerator : public BaseGenerator {
         break;
       }
       case BASE_TYPE_VECTOR: {
+        if(IsOneByte(type.element)) {
+          type_name = "Integer";
+        }
+
         type_name = "ArrayList<" + type_name + ">";
         break;
       }
