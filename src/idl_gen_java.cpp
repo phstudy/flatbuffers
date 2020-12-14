@@ -74,15 +74,20 @@ class JavaGenerator : public BaseGenerator {
     for (auto it = parser_.structs_.vec.begin();
          it != parser_.structs_.vec.end(); ++it) {
       std::string declcode;
+      std::string objCode;
+
       auto &struct_def = **it;
       if (!parser_.opts.one_file)
         cur_name_space_ = struct_def.defined_namespace;
-      GenStruct(struct_def, &declcode, parser_.opts);
+      GenStruct(struct_def, &declcode, &objCode, parser_.opts);
       if (parser_.opts.one_file) {
         one_file_code += declcode;
       } else {
         if (!SaveType(struct_def.name, *struct_def.defined_namespace, declcode,
                       /* needs_includes= */ true))
+          return false;
+        if (!SaveType(struct_def.name + "T", *struct_def.defined_namespace, objCode,
+            /* needs_includes= */ true))
           return false;
       }
     }
@@ -419,6 +424,12 @@ class JavaGenerator : public BaseGenerator {
 
   // Returns the method name for use with add/put calls.
   std::string GenMethod(const Type &type) const {
+    if (type.base_type == BASE_TYPE_UINT) {
+      return "Long";
+    } else if (type.base_type == BASE_TYPE_UCHAR || type.base_type == BASE_TYPE_SHORT) {
+      return "Int";
+    }
+
     return IsScalar(type.base_type) ? MakeCamel(GenTypeBasic(type))
                                     : (IsStruct(type) ? "Struct" : "Offset");
   }
@@ -571,7 +582,7 @@ class JavaGenerator : public BaseGenerator {
     return key_getter;
   }
 
-  void GenStruct(StructDef &struct_def, std::string *code_ptr,
+  void GenStruct(StructDef &struct_def, std::string *code_ptr, std::string *objcode_ptr,
                  const IDLOptions &opts) const {
     if (struct_def.generated) return;
     std::string &code = *code_ptr;
@@ -1061,11 +1072,7 @@ class JavaGenerator : public BaseGenerator {
         auto argname = MakeCamel(field.name, false);
         if (!IsScalar(field.value.type.base_type)) argname += "Offset";
         code += " " + argname + ") { builder.add";
-        if (IsOneByte(field.value.type.base_type)) {
-          code += "Int(";
-        } else {
-          code += GenMethod(field.value.type) + "(";
-        }
+        code += GenMethod(field.value.type) + "(";
         code += NumToString(it - struct_def.fields.vec.begin()) + ", ";
         code += SourceCastBasic(field.value.type);
         code += argname;
@@ -1204,7 +1211,7 @@ class JavaGenerator : public BaseGenerator {
     code += "\n\n";
 
     if (opts.generate_object_based_api) {
-      GenStruct_ObjectAPI(struct_def, code_ptr, opts);
+      GenStruct_ObjectAPI(struct_def, objcode_ptr, opts);
     }
   }
 
@@ -1647,13 +1654,11 @@ class JavaGenerator : public BaseGenerator {
                     "Vector(builder, " + array_name + ");\n";
             code += "    }\n";
           } else {
-            auto vectorType = IsOneByte(field.value.type.VectorType().base_type) ? "Int" : GenMethod(field.value.type.VectorType());
-
             auto pack_method =
                 field.value.type.struct_def == nullptr
-                    ? "builder.add"
-                          + vectorType +
-                          "(_o." + field.name + ".get(_j));"
+                  ? "builder.add" + GenMethod(field.value.type.VectorType()) +
+                        "(" + (field.value.type.VectorType().base_type == BASE_TYPE_STRING ? "builder.createString" : "")
+                                + "(_o." + field.name + ".get(_j)));"
                   : GenTypeGet(field.value.type) + ".pack(builder, _o." +
                           field.name + ".get(_j));";
             code += "    int _" + field.name + " = 0;\n";
@@ -1752,7 +1757,7 @@ class JavaGenerator : public BaseGenerator {
       code += ");\n";
     } else {
       // Start, End
-      code += "    Start" + struct_def.name + "(builder);\n";
+      code += "    start" + struct_def.name + "(builder);\n";
       for (auto it = struct_def.fields.vec.begin();
            it != struct_def.fields.vec.end(); ++it) {
         auto &field = **it;
@@ -1761,12 +1766,12 @@ class JavaGenerator : public BaseGenerator {
         switch (field.value.type.base_type) {
           case BASE_TYPE_STRUCT: {
             if (field.value.type.struct_def->fixed) {
-              code += "    Add" + camel_name + "(builder, " +
+              code += "    add" + camel_name + "(builder, " +
                       GenTypeGet(field.value.type) + ".pack(builder, _o." +
                       camel_name + "));\n";
             } else {
               code +=
-                  "    Add" + camel_name + "(builder, _" + field.name + ");\n";
+                  "    add" + camel_name + "(builder, _" + field.name + ");\n";
             }
             break;
           }
@@ -1774,7 +1779,7 @@ class JavaGenerator : public BaseGenerator {
           case BASE_TYPE_ARRAY: FLATBUFFERS_FALLTHROUGH();   // fall thru
           case BASE_TYPE_VECTOR: {
             code +=
-                "    Add" + camel_name + "(builder, _" + field.name + ");\n";
+                "    add" + camel_name + "(builder, _" + field.name + ");\n";
             break;
           }
           case BASE_TYPE_UTYPE: break;
@@ -1782,18 +1787,18 @@ class JavaGenerator : public BaseGenerator {
             code += "    Add" + camel_name + "Type(builder, _" + field.name +
                     "_type);\n";
             code +=
-                "    Add" + camel_name + "(builder, _" + field.name + ");\n";
+                "    add" + camel_name + "(builder, _" + field.name + ");\n";
             break;
           }
           // scalar
           default: {
             code +=
-                "    Add" + camel_name + "(builder, _o." + camel_name + ");\n";
+                "    add" + camel_name + "(builder, _o." + field.name + ");\n";
             break;
           }
         }
       }
-      code += "    return End" + struct_def.name + "(builder);\n";
+      code += "    return end" + struct_def.name + "(builder);\n";
     }
     code += "  }\n";
   }
@@ -1920,13 +1925,44 @@ class JavaGenerator : public BaseGenerator {
     }
 
     switch (type.base_type) {
+      case BASE_TYPE_ULONG:  FLATBUFFERS_FALLTHROUGH();
+      case BASE_TYPE_LONG:  FLATBUFFERS_FALLTHROUGH();
+      case BASE_TYPE_UINT: {
+        type_name = "Long";
+        break;
+      }
+      case BASE_TYPE_UCHAR: {
+        type_name = "Integer";
+        break;
+      }
       case BASE_TYPE_ARRAY: {
         type_name = type_name + "[]";
         break;
       }
       case BASE_TYPE_VECTOR: {
-        if(IsOneByte(type.element)) {
+//        inline bool IsScalar (BaseType t) { return t >= BASE_TYPE_UTYPE &&
+//                                                   t <= BASE_TYPE_DOUBLE; }
+//        inline bool IsInteger(BaseType t) { return t >= BASE_TYPE_UTYPE &&
+//                                                   t <= BASE_TYPE_ULONG; }
+//        inline bool IsFloat  (BaseType t) { return t == BASE_TYPE_FLOAT ||
+//                                                   t == BASE_TYPE_DOUBLE; }
+//        inline bool IsLong   (BaseType t) { return t == BASE_TYPE_LONG ||
+//                                                   t == BASE_TYPE_ULONG; }
+//        inline bool IsBool   (BaseType t) { return t == BASE_TYPE_BOOL; }
+//        inline bool IsOneByte(BaseType t) { return t >= BASE_TYPE_UTYPE &&
+//                                                   t <= BASE_TYPE_UCHAR; }
+        if (type.element == BASE_TYPE_SHORT) {
+          type_name = "Short";
+        } else if (type.element == BASE_TYPE_UCHAR) {
           type_name = "Integer";
+        } else if (IsOneByte(type.element)) {
+          type_name = "Byte";
+        } else if (IsLong(type.element) || type.element == BASE_TYPE_UINT) {
+          type_name = "Long";
+        } else if(IsInteger(type.element)) {
+          type_name = "Integer";
+        } else  if(IsFloat(type.element)) {
+          type_name = "Float";
         }
 
         type_name = "ArrayList<" + type_name + ">";
@@ -2016,6 +2052,7 @@ class JavaGenerator : public BaseGenerator {
           code += "  [Newtonsoft.Json.JsonIgnore()]\n";
         }
       }
+
       code += "  public " + type_name + " " + field.name + ";\n";
     }
 
